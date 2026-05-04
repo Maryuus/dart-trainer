@@ -139,7 +139,8 @@ export default function SessionPage() {
           </Button>
           <div className="flex items-center gap-3">
             {session && <span className="text-white/40 text-sm font-mono">{formatDuration(elapsed)}</span>}
-            <ConnectionStatus status={wsStatus} />
+            {/* N'afficher le statut WebSocket que pendant une session active */}
+            {session && hasAutodarts && <ConnectionStatus status={wsStatus} />}
           </div>
         </div>
 
