@@ -10,7 +10,7 @@ import { DartBoard } from "@/components/DartBoard";
 import { ThrowHistory } from "@/components/ThrowHistory";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { loadRoutines } from "@/lib/routines";
-import { loadToken, AutodartsSocket, parseThrowToSegment } from "@/lib/autodarts";
+import { loadCredentials, AutodartsSocket, parseThrowToSegment } from "@/lib/autodarts";
 import { segmentFullLabel, formatDuration } from "@/lib/utils";
 import { useRoutineSession } from "@/hooks/useRoutineSession";
 import type { Routine, DartSegment, AutodartsThrow } from "@/lib/types";
@@ -45,14 +45,13 @@ export default function SessionPage() {
   // WebSocket connection
   useEffect(() => {
     if (!session || session.status === "done") return;
-    const token = loadToken();
-    const boardId = typeof window !== "undefined" ? localStorage.getItem("autodarts_board_id") : null;
-    if (!token || !boardId) return;
+    const creds = loadCredentials();
+    if (!creds) return;
 
     setWsStatus("connecting");
     const socket = new AutodartsSocket(
-      boardId,
-      token,
+      creds.boardId,
+      creds.apiKey,
       (segment: DartSegment | null, _raw: AutodartsThrow) => {
         recordThrow(segment);
       },
@@ -85,7 +84,7 @@ export default function SessionPage() {
         routine.steps.length) * 100
     : 0;
 
-  const hasAutodarts = !!loadToken() && !!localStorage.getItem?.("autodarts_board_id");
+  const hasAutodarts = !!loadCredentials();
 
   // Done screen
   if (session?.status === "done") {

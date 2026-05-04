@@ -6,7 +6,7 @@ import { Plus, Target, Zap, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RoutineCard } from "@/components/RoutineCard";
 import { loadRoutines, saveRoutines, deleteRoutine } from "@/lib/routines";
-import { loadToken } from "@/lib/autodarts";
+import { loadCredentials } from "@/lib/autodarts";
 import type { Routine } from "@/lib/types";
 
 export default function HomePage() {
@@ -15,7 +15,7 @@ export default function HomePage() {
 
   useEffect(() => {
     setRoutines(loadRoutines());
-    setIsConnected(!!loadToken());
+    setIsConnected(!!loadCredentials());
   }, []);
 
   const handleDelete = (id: string) => {
