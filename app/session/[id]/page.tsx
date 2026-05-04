@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Play, RotateCcw, SkipForward, CheckCircle2, Wifi } from "lucide-react";
+import { ArrowLeft, Play, RotateCcw, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -170,8 +170,7 @@ export default function SessionPage() {
             </div>
 
             {!hasAutodarts && (
-              <p className="text-amber-400/70 text-xs mb-4 flex items-center justify-center gap-1.5">
-                <Wifi className="w-3.5 h-3.5" />
+              <p className="text-amber-400/70 text-xs mb-4 text-center">
                 Mode manuel — Autodarts non configuré
               </p>
             )}
@@ -213,9 +212,17 @@ export default function SessionPage() {
                 {/* Throw history for this step */}
                 <ThrowHistory results={stepResults} totalThrows={currentStep.throws} />
 
-                {/* Manual mode buttons */}
-                {!hasAutodarts && (
-                  <div className="flex gap-3 mt-2">
+                {/* Boutons toujours visibles : auto si connecté, fallback sinon */}
+                <div className="flex flex-col items-center gap-2">
+                  {hasAutodarts && wsStatus !== "connected" && (
+                    <p className="text-xs text-white/30 mb-1">
+                      {wsStatus === "connecting" ? "Connexion Autodarts en cours…" : "Autodarts non connecté — mode manuel actif"}
+                    </p>
+                  )}
+                  {hasAutodarts && wsStatus === "connected" && (
+                    <p className="text-xs text-emerald-400/60 mb-1">Détection automatique active</p>
+                  )}
+                  <div className="flex gap-3">
                     <Button
                       size="lg"
                       onClick={() => manualThrow(true)}
@@ -232,7 +239,7 @@ export default function SessionPage() {
                       ✗ Raté
                     </Button>
                   </div>
-                )}
+                </div>
 
                 {/* Stats row */}
                 <div className="flex gap-6 text-center">

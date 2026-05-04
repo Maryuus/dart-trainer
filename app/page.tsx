@@ -11,7 +11,8 @@ import type { Routine } from "@/lib/types";
 
 export default function HomePage() {
   const [routines, setRoutines] = useState<Routine[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
+  // null = pas encore lu, false = pas connecté, true = connecté
+  const [isConnected, setIsConnected] = useState<boolean | null>(null);
 
   useEffect(() => {
     setRoutines(loadRoutines());
@@ -41,8 +42,8 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Connection banner */}
-          {!isConnected && (
+          {/* Connection banner — seulement affiché après lecture du localStorage (isConnected !== null) */}
+          {isConnected === false && (
             <div className="flex items-center justify-between p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 mb-6">
               <div className="flex items-center gap-3">
                 <Zap className="w-4 h-4 text-amber-400" />
@@ -53,6 +54,12 @@ export default function HomePage() {
               <Button asChild size="sm" variant="outline" className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10 shrink-0">
                 <Link href="/settings">Configurer</Link>
               </Button>
+            </div>
+          )}
+          {isConnected === true && (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-500/20 bg-emerald-500/5 mb-6 w-fit">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-sm text-emerald-400 font-medium">Autodarts configuré — prêt à détecter les lancers</span>
             </div>
           )}
 
