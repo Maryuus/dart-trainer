@@ -51,7 +51,7 @@ export default function SessionPage() {
     setWsStatus("connecting");
     const socket = new AutodartsSocket(
       creds.boardId,
-      creds.apiKey,
+      creds.token,
       (segment: DartSegment | null, _raw: AutodartsThrow) => {
         recordThrow(segment);
       },

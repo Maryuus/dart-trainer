@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Save, Trash2, Wifi, WifiOff, KeyRound, Hash } from "lucide-react";
+import { LogOut, Wifi, WifiOff, KeyRound, Hash, User, Lock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -9,20 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { useAutodartsSettings } from "@/hooks/useAutodarts";
 
 export default function SettingsPage() {
-  const { apiKey, boardId, saved, save, logout } = useAutodartsSettings();
+  const { token, boardId, loading, error, isConfigured, login, logout } = useAutodartsSettings();
 
-  const [keyInput, setKeyInput] = useState(apiKey);
-  const [idInput, setIdInput] = useState(boardId);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [boardInput, setBoardInput] = useState(boardId);
 
-  // Sync inputs when credentials load from localStorage
-  const [synced, setSynced] = useState(false);
-  if (!synced && apiKey) {
-    setKeyInput(apiKey);
-    setIdInput(boardId);
-    setSynced(true);
-  }
+  // sync boardId once loaded
+  if (boardId && boardInput !== boardId && !boardInput) setBoardInput(boardId);
 
-  const canSave = keyInput.trim().length > 0 && idInput.trim().length > 0;
+  const canLogin = username.trim() && password.trim() && boardInput.trim();
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
@@ -32,7 +28,6 @@ export default function SettingsPage() {
       </div>
 
       <div className="flex flex-col gap-4">
-        {/* Autodarts connection */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -41,85 +36,104 @@ export default function SettingsPage() {
                   <Wifi className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
-                  <CardTitle>Autodarts</CardTitle>
-                  <CardDescription>API Key + Board ID</CardDescription>
+                  <CardTitle>Connexion Autodarts</CardTitle>
+                  <CardDescription>Login + Board ID</CardDescription>
                 </div>
               </div>
-              <Badge variant={saved ? "success" : "secondary"}>
-                {saved ? "Configuré" : "Non configuré"}
+              <Badge variant={isConfigured ? "success" : "secondary"}>
+                {isConfigured ? "Connecté" : "Non configuré"}
               </Badge>
             </div>
           </CardHeader>
 
           <CardContent className="flex flex-col gap-5">
-            {/* Where to find the values */}
-            <div className="p-4 rounded-xl border border-white/10 bg-white/5 text-sm text-white/60 flex flex-col gap-1.5">
-              <p className="font-semibold text-white/80 mb-1">Où trouver ces infos ?</p>
-              <p>1. Connecte-toi sur <strong className="text-white">autodarts.io</strong></p>
-              <p>2. Va dans <strong className="text-white">Paramètres → API</strong></p>
-              <p>3. Copie ton <strong className="text-white">API Key</strong> et ton <strong className="text-white">Board ID</strong></p>
-            </div>
+            {!isConfigured ? (
+              <>
+                <div className="p-4 rounded-xl border border-white/10 bg-white/5 text-sm text-white/60 flex flex-col gap-1.5">
+                  <p className="font-semibold text-white/80 mb-1">Infos nécessaires</p>
+                  <p>• <strong className="text-white">Email / mot de passe</strong> de ton compte autodarts.io</p>
+                  <p>• <strong className="text-white">Board ID</strong> : dans autodarts.io → Paramètres → ton board</p>
+                </div>
 
-            {/* API Key input */}
-            <div>
-              <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
-                <KeyRound className="w-3.5 h-3.5" />
-                API Key
-              </label>
-              <Input
-                type="password"
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                className="font-mono text-xs"
-              />
-            </div>
+                <div>
+                  <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
+                    <User className="w-3.5 h-3.5" /> Email autodarts
+                  </label>
+                  <Input
+                    type="email"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="ton@email.com"
+                    autoComplete="username"
+                  />
+                </div>
 
-            {/* Board ID input */}
-            <div>
-              <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
-                <Hash className="w-3.5 h-3.5" />
-                Board ID
-              </label>
-              <Input
-                value={idInput}
-                onChange={(e) => setIdInput(e.target.value)}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                className="font-mono text-xs"
-              />
-            </div>
+                <div>
+                  <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
+                    <Lock className="w-3.5 h-3.5" /> Mot de passe
+                  </label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                  />
+                </div>
 
-            {/* Actions */}
-            <div className="flex gap-3">
-              <Button
-                onClick={() => save(keyInput, idInput)}
-                disabled={!canSave}
-                className="flex-1"
-              >
-                <Save className="w-4 h-4" />
-                {saved ? "Mettre à jour" : "Enregistrer"}
-              </Button>
-              {saved && (
+                <div>
+                  <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
+                    <Hash className="w-3.5 h-3.5" /> Board ID
+                  </label>
+                  <Input
+                    value={boardInput}
+                    onChange={(e) => setBoardInput(e.target.value)}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    className="font-mono text-xs"
+                  />
+                </div>
+
+                {error && (
+                  <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/5 text-sm text-red-400">
+                    {error}
+                  </div>
+                )}
+
+                <Button
+                  onClick={() => login(username, password, boardInput)}
+                  disabled={!canLogin || loading}
+                  size="lg"
+                >
+                  {loading ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Connexion…</>
+                  ) : (
+                    <><Wifi className="w-4 h-4" /> Se connecter</>
+                  )}
+                </Button>
+              </>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <p className="text-sm text-emerald-400 font-medium">
+                  ✓ Authentifié — token OAuth actif
+                </p>
+                <div className="p-3 rounded-xl border border-white/10 bg-white/5 text-xs text-white/40 font-mono">
+                  Board : {boardId}
+                </div>
+                <p className="text-xs text-white/40">
+                  Le token expire automatiquement. Si la connexion est perdue, reconnecte-toi.
+                </p>
                 <Button
                   variant="ghost"
                   onClick={logout}
-                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 w-fit"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  Supprimer
+                  <LogOut className="w-4 h-4" /> Déconnexion
                 </Button>
-              )}
-            </div>
-
-            {saved && (
-              <p className="text-xs text-emerald-400/80">
-                ✓ Credentials enregistrés — les lancers seront détectés automatiquement pendant les sessions.
-              </p>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Manual mode info */}
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -134,7 +148,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-white/50">
-              Sans Autodarts configuré, des boutons <strong className="text-white">Touché / Raté</strong> s&apos;affichent pendant les sessions pour saisir ta progression manuellement.
+              Sans Autodarts configuré, des boutons <strong className="text-white">Touché / Raté</strong> sont toujours disponibles pendant les sessions.
             </p>
           </CardContent>
         </Card>

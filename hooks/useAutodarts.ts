@@ -1,35 +1,49 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { saveCredentials, loadCredentials, clearCredentials } from "@/lib/autodarts";
+import { loginAutodarts, saveCredentials, saveBoardId, loadCredentials, clearCredentials } from "@/lib/autodarts";
 
 export function useAutodartsSettings() {
-  const [apiKey, setApiKey] = useState("");
+  const [token, setToken] = useState<string | null>(null);
   const [boardId, setBoardId] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const creds = loadCredentials();
     if (creds) {
-      setApiKey(creds.apiKey);
+      setToken(creds.token);
       setBoardId(creds.boardId);
-      setSaved(true);
+    } else {
+      // board ID might be saved without a valid token
+      const saved = localStorage.getItem("autodarts_board_id");
+      if (saved) setBoardId(saved);
     }
   }, []);
 
-  const save = useCallback((key: string, id: string) => {
-    saveCredentials(key.trim(), id.trim());
-    setApiKey(key.trim());
-    setBoardId(id.trim());
-    setSaved(true);
+  const login = useCallback(async (username: string, password: string, board: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await loginAutodarts(username, password);
+      saveCredentials(data.access_token, board.trim(), data.expires_in);
+      setToken(data.access_token);
+      setBoardId(board.trim());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erreur inconnue");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   const logout = useCallback(() => {
     clearCredentials();
-    setApiKey("");
+    setToken(null);
     setBoardId("");
-    setSaved(false);
+    setError(null);
   }, []);
 
-  return { apiKey, boardId, saved, save, logout };
+  const isConfigured = !!token;
+
+  return { token, boardId, loading, error, isConfigured, login, logout };
 }

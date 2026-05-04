@@ -4,28 +4,51 @@ const WS_URL = "wss://api.autodarts.io/ms/v0/subscribe";
 
 // --- Persistence ---
 
-export function saveCredentials(apiKey: string, boardId: string): void {
-  localStorage.setItem("autodarts_api_key", apiKey);
+export function saveCredentials(token: string, boardId: string, expiresIn: number): void {
+  localStorage.setItem("autodarts_token", token);
+  localStorage.setItem("autodarts_board_id", boardId);
+  localStorage.setItem("autodarts_token_expires", String(Date.now() + expiresIn * 1000));
+}
+
+export function saveBoardId(boardId: string): void {
   localStorage.setItem("autodarts_board_id", boardId);
 }
 
-export function loadCredentials(): { apiKey: string; boardId: string } | null {
+export function loadCredentials(): { token: string; boardId: string } | null {
   if (typeof window === "undefined") return null;
-  const apiKey = localStorage.getItem("autodarts_api_key");
+  const token = localStorage.getItem("autodarts_token");
   const boardId = localStorage.getItem("autodarts_board_id");
-  if (!apiKey || !boardId) return null;
-  return { apiKey, boardId };
+  const expires = Number(localStorage.getItem("autodarts_token_expires") ?? 0);
+  if (!token || !boardId) return null;
+  if (expires && Date.now() > expires) return null; // token expiré
+  return { token, boardId };
 }
 
 export function clearCredentials(): void {
-  localStorage.removeItem("autodarts_api_key");
+  localStorage.removeItem("autodarts_token");
   localStorage.removeItem("autodarts_board_id");
+  localStorage.removeItem("autodarts_token_expires");
 }
 
-// Kept for backward compat with existing session page
+// backward compat
 export function loadToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("autodarts_api_key");
+  return loadCredentials()?.token ?? null;
+}
+
+// --- Auth via Next.js API proxy ---
+
+export async function loginAutodarts(
+  username: string,
+  password: string
+): Promise<{ access_token: string; expires_in: number; refresh_token: string }> {
+  const res = await fetch("/api/auth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "Authentification échouée");
+  return data;
 }
 
 // --- Segment parsing ---
@@ -33,13 +56,10 @@ export function loadToken(): string | null {
 export function parseThrowToSegment(t: AutodartsThrow): DartSegment | null {
   const seg = t.segment?.toUpperCase();
   if (!seg) return null;
-
   if (seg === "BULL" && t.multiplier === 2) return { type: "bullseye" };
   if (seg === "BULL") return { type: "bull" };
-
   const value = parseInt(seg, 10);
   if (isNaN(value)) return null;
-
   if (t.multiplier === 3) return { type: "triple", value };
   if (t.multiplier === 2) return { type: "double", value };
   return { type: "single", value };
@@ -64,7 +84,7 @@ export type ThrowCallback = (thrown: DartSegment | null, raw: AutodartsThrow) =>
 export class AutodartsSocket {
   private ws: WebSocket | null = null;
   private boardId: string;
-  private apiKey: string;
+  private token: string;
   private onThrow: ThrowCallback;
   private onStatusChange: (status: "connected" | "disconnected" | "error") => void;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -72,21 +92,20 @@ export class AutodartsSocket {
 
   constructor(
     boardId: string,
-    apiKey: string,
+    token: string,
     onThrow: ThrowCallback,
     onStatusChange: (status: "connected" | "disconnected" | "error") => void
   ) {
     this.boardId = boardId;
-    this.apiKey = apiKey;
+    this.token = token;
     this.onThrow = onThrow;
     this.onStatusChange = onStatusChange;
   }
 
   connect(): void {
     if (this.ws) this.ws.close();
-
     try {
-      this.ws = new WebSocket(`${WS_URL}?token=${this.apiKey}`);
+      this.ws = new WebSocket(`${WS_URL}?token=${this.token}`);
 
       this.ws.onopen = () => {
         this.onStatusChange("connected");
@@ -106,9 +125,7 @@ export class AutodartsSocket {
             const lastThrow: AutodartsThrow = msg.data.throws[msg.data.throws.length - 1];
             if (lastThrow) this.onThrow(parseThrowToSegment(lastThrow), lastThrow);
           }
-        } catch {
-          // ignore parse errors
-        }
+        } catch { /* ignore */ }
       };
 
       this.ws.onerror = () => this.onStatusChange("error");
@@ -116,7 +133,7 @@ export class AutodartsSocket {
       this.ws.onclose = () => {
         this.onStatusChange("disconnected");
         if (this.shouldReconnect) {
-          this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+          this.reconnectTimer = setTimeout(() => this.connect(), 5000);
         }
       };
     } catch {
