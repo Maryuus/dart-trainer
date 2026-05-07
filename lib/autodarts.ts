@@ -51,22 +51,18 @@ export async function loginAutodarts(
   return data;
 }
 
-// --- Token validation via server proxy ---
+// --- Token validation (décodage JWT local, sans appel réseau) ---
 
-export async function validateToken(
-  token: string
-): Promise<{ valid: boolean; error?: string }> {
+export function validateToken(token: string): { valid: boolean; error?: string } {
   try {
-    const res = await fetch("/api/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const data = await res.json();
-    if (!res.ok) return { valid: false, error: data.error };
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    if (!payload.exp) return { valid: true };
+    if (Date.now() / 1000 > payload.exp) {
+      return { valid: false, error: "Token expiré" };
+    }
     return { valid: true };
   } catch {
-    // En cas d'erreur réseau, on laisse tenter la connexion WebSocket
+    // Si on ne peut pas décoder le JWT, on laisse tenter la connexion
     return { valid: true };
   }
 }

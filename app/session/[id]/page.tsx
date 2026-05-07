@@ -48,35 +48,26 @@ export default function SessionPage() {
     const creds = loadCredentials();
     if (!creds) return;
 
-    let socket: AutodartsSocket | null = null;
-    let cancelled = false;
+    const validation = validateToken(creds.token);
+    if (!validation.valid) {
+      setWsStatus("error");
+      return;
+    }
 
     setWsStatus("connecting");
-
-    validateToken(creds.token).then((result) => {
-      if (cancelled) return;
-      if (!result.valid) {
-        setWsStatus("error");
-        return;
+    const socket = new AutodartsSocket(
+      creds.boardId,
+      creds.token,
+      (segment: DartSegment | null, _raw: AutodartsThrow) => {
+        recordThrow(segment);
+      },
+      (status) => {
+        setWsStatus(status === "connected" ? "connected" : status === "error" ? "error" : "disconnected");
       }
-      socket = new AutodartsSocket(
-        creds.boardId,
-        creds.token,
-        (segment: DartSegment | null, _raw: AutodartsThrow) => {
-          recordThrow(segment);
-        },
-        (status) => {
-          setWsStatus(status === "connected" ? "connected" : status === "error" ? "error" : "disconnected");
-        }
-      );
-      socket.connect();
-    });
+    );
+    socket.connect();
 
-    return () => {
-      cancelled = true;
-      socket?.disconnect();
-      setWsStatus("disconnected");
-    };
+    return () => { socket.disconnect(); setWsStatus("disconnected"); };
   }, [session?.status, recordThrow]);
 
   // Elapsed timer
