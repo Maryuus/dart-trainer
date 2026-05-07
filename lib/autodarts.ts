@@ -149,6 +149,7 @@ export class AutodartsSocket {
       this.ws.onopen = () => {
         this.clearConnectionTimer();
         this.reconnectAttempts = 0;
+        console.log("[AutodartsSocket] connected ✓");
         this.onStatusChange("connected");
         this.ws?.send(
           JSON.stringify({
@@ -169,19 +170,20 @@ export class AutodartsSocket {
         } catch { /* ignore */ }
       };
 
-      this.ws.onerror = () => {
+      this.ws.onerror = (e) => {
         this.clearConnectionTimer();
+        console.error("[AutodartsSocket] WebSocket error", e);
         this.onStatusChange("error");
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (e) => {
         this.clearConnectionTimer();
+        console.warn(`[AutodartsSocket] closed — code: ${e.code}, reason: "${e.reason}", clean: ${e.wasClean}`);
         if (this.shouldReconnect && this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
           this.reconnectAttempts++;
           this.onStatusChange("disconnected");
           this.reconnectTimer = setTimeout(() => this.connect(), 5000);
         } else {
-          // Échec définitif après MAX_RECONNECT_ATTEMPTS tentatives
           this.onStatusChange("error");
         }
       };
