@@ -53,7 +53,7 @@ export default function SessionPage() {
 
     setWsStatus("connecting");
 
-    validateToken(creds.token, creds.boardId).then((result) => {
+    validateToken(creds.token).then((result) => {
       if (cancelled) return;
       if (!result.valid) {
         setWsStatus("error");

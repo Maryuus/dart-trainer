@@ -54,20 +54,20 @@ export async function loginAutodarts(
 // --- Token validation via server proxy ---
 
 export async function validateToken(
-  token: string,
-  boardId: string
+  token: string
 ): Promise<{ valid: boolean; error?: string }> {
   try {
     const res = await fetch("/api/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, boardId }),
+      body: JSON.stringify({ token }),
     });
     const data = await res.json();
     if (!res.ok) return { valid: false, error: data.error };
     return { valid: true };
   } catch {
-    return { valid: false, error: "Erreur réseau" };
+    // En cas d'erreur réseau, on laisse tenter la connexion WebSocket
+    return { valid: true };
   }
 }
 
