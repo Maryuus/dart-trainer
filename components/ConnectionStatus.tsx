@@ -13,7 +13,7 @@ const config: Record<ConnStatus, { icon: React.ElementType; label: string; color
   connected: { icon: Wifi, label: "Connecté", color: "text-emerald-400", pulse: true },
   connecting: { icon: Loader2, label: "Connexion…", color: "text-amber-400", pulse: false },
   disconnected: { icon: WifiOff, label: "Déconnecté", color: "text-white/40", pulse: false },
-  error: { icon: AlertCircle, label: "Erreur", color: "text-red-400", pulse: false },
+  error: { icon: AlertCircle, label: "Token expiré", color: "text-red-400", pulse: false },
 };
 
 export function ConnectionStatus({ status, boardName }: Props) {

@@ -51,6 +51,26 @@ export async function loginAutodarts(
   return data;
 }
 
+// --- Token validation via server proxy ---
+
+export async function validateToken(
+  token: string,
+  boardId: string
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    const res = await fetch("/api/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, boardId }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { valid: false, error: data.error };
+    return { valid: true };
+  } catch {
+    return { valid: false, error: "Erreur réseau" };
+  }
+}
+
 // --- Segment parsing ---
 
 export function parseThrowToSegment(t: AutodartsThrow): DartSegment | null {
@@ -81,6 +101,9 @@ export function segmentsMatch(target: DartSegment, thrown: DartSegment): boolean
 
 export type ThrowCallback = (thrown: DartSegment | null, raw: AutodartsThrow) => void;
 
+const CONNECTION_TIMEOUT_MS = 10_000;
+const MAX_RECONNECT_ATTEMPTS = 3;
+
 export class AutodartsSocket {
   private ws: WebSocket | null = null;
   private boardId: string;
@@ -88,7 +111,9 @@ export class AutodartsSocket {
   private onThrow: ThrowCallback;
   private onStatusChange: (status: "connected" | "disconnected" | "error") => void;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectionTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
+  private reconnectAttempts = 0;
 
   constructor(
     boardId: string,
@@ -102,12 +127,32 @@ export class AutodartsSocket {
     this.onStatusChange = onStatusChange;
   }
 
+  private clearConnectionTimer(): void {
+    if (this.connectionTimer) {
+      clearTimeout(this.connectionTimer);
+      this.connectionTimer = null;
+    }
+  }
+
   connect(): void {
     if (this.ws) this.ws.close();
+
+    // Timeout de connexion : si le handshake ne réussit pas en 10s → erreur
+    this.connectionTimer = setTimeout(() => {
+      this.connectionTimer = null;
+      if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+        this.shouldReconnect = false;
+        this.ws.close();
+        this.onStatusChange("error");
+      }
+    }, CONNECTION_TIMEOUT_MS);
+
     try {
       this.ws = new WebSocket(`${WS_URL}?token=${this.token}`);
 
       this.ws.onopen = () => {
+        this.clearConnectionTimer();
+        this.reconnectAttempts = 0;
         this.onStatusChange("connected");
         this.ws?.send(
           JSON.stringify({
@@ -128,21 +173,31 @@ export class AutodartsSocket {
         } catch { /* ignore */ }
       };
 
-      this.ws.onerror = () => this.onStatusChange("error");
+      this.ws.onerror = () => {
+        this.clearConnectionTimer();
+        this.onStatusChange("error");
+      };
 
       this.ws.onclose = () => {
-        this.onStatusChange("disconnected");
-        if (this.shouldReconnect) {
+        this.clearConnectionTimer();
+        if (this.shouldReconnect && this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          this.reconnectAttempts++;
+          this.onStatusChange("disconnected");
           this.reconnectTimer = setTimeout(() => this.connect(), 5000);
+        } else {
+          // Échec définitif après MAX_RECONNECT_ATTEMPTS tentatives
+          this.onStatusChange("error");
         }
       };
     } catch {
+      this.clearConnectionTimer();
       this.onStatusChange("error");
     }
   }
 
   disconnect(): void {
     this.shouldReconnect = false;
+    this.clearConnectionTimer();
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.ws?.close();
     this.ws = null;

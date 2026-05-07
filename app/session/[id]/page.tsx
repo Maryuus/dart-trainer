@@ -10,7 +10,7 @@ import { DartBoard } from "@/components/DartBoard";
 import { ThrowHistory } from "@/components/ThrowHistory";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { loadRoutines } from "@/lib/routines";
-import { loadCredentials, AutodartsSocket, parseThrowToSegment } from "@/lib/autodarts";
+import { loadCredentials, validateToken, AutodartsSocket, parseThrowToSegment } from "@/lib/autodarts";
 import { segmentFullLabel, formatDuration } from "@/lib/utils";
 import { useRoutineSession } from "@/hooks/useRoutineSession";
 import type { Routine, DartSegment, AutodartsThrow } from "@/lib/types";
@@ -48,20 +48,35 @@ export default function SessionPage() {
     const creds = loadCredentials();
     if (!creds) return;
 
-    setWsStatus("connecting");
-    const socket = new AutodartsSocket(
-      creds.boardId,
-      creds.token,
-      (segment: DartSegment | null, _raw: AutodartsThrow) => {
-        recordThrow(segment);
-      },
-      (status) => {
-        setWsStatus(status === "connected" ? "connected" : status === "error" ? "error" : "disconnected");
-      }
-    );
-    socket.connect();
+    let socket: AutodartsSocket | null = null;
+    let cancelled = false;
 
-    return () => { socket.disconnect(); setWsStatus("disconnected"); };
+    setWsStatus("connecting");
+
+    validateToken(creds.token, creds.boardId).then((result) => {
+      if (cancelled) return;
+      if (!result.valid) {
+        setWsStatus("error");
+        return;
+      }
+      socket = new AutodartsSocket(
+        creds.boardId,
+        creds.token,
+        (segment: DartSegment | null, _raw: AutodartsThrow) => {
+          recordThrow(segment);
+        },
+        (status) => {
+          setWsStatus(status === "connected" ? "connected" : status === "error" ? "error" : "disconnected");
+        }
+      );
+      socket.connect();
+    });
+
+    return () => {
+      cancelled = true;
+      socket?.disconnect();
+      setWsStatus("disconnected");
+    };
   }, [session?.status, recordThrow]);
 
   // Elapsed timer
@@ -216,8 +231,12 @@ export default function SessionPage() {
                 {/* Boutons toujours visibles : auto si connecté, fallback sinon */}
                 <div className="flex flex-col items-center gap-2">
                   {hasAutodarts && wsStatus !== "connected" && (
-                    <p className="text-xs text-white/30 mb-1">
-                      {wsStatus === "connecting" ? "Connexion Autodarts en cours…" : "Autodarts non connecté — mode manuel actif"}
+                    <p className={`text-xs mb-1 ${wsStatus === "error" ? "text-red-400/80" : "text-white/30"}`}>
+                      {wsStatus === "connecting"
+                        ? "Connexion Autodarts en cours…"
+                        : wsStatus === "error"
+                        ? <>Token expiré ou invalide — <Link href="/settings" className="underline">mets-le à jour</Link></>
+                        : "Autodarts non connecté — mode manuel actif"}
                     </p>
                   )}
                   {hasAutodarts && wsStatus === "connected" && (
