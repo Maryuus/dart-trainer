@@ -1,7 +1,5 @@
 import type { AutodartsThrow, DartSegment } from "./types";
 
-const WS_URL = "wss://api.autodarts.io/ms/v0/subscribe";
-
 // --- Persistence ---
 
 export function saveCredentials(token: string, boardId: string, expiresIn: number): void {
@@ -93,23 +91,16 @@ export function segmentsMatch(target: DartSegment, thrown: DartSegment): boolean
   return false;
 }
 
-// --- WebSocket ---
+// --- SSE proxy (remplace WebSocket direct bloqué par l'Origin Autodarts) ---
 
 export type ThrowCallback = (thrown: DartSegment | null, raw: AutodartsThrow) => void;
 
-const CONNECTION_TIMEOUT_MS = 10_000;
-const MAX_RECONNECT_ATTEMPTS = 3;
-
-export class AutodartsSocket {
-  private ws: WebSocket | null = null;
+export class AutodartsSSE {
+  private es: EventSource | null = null;
   private boardId: string;
   private token: string;
   private onThrow: ThrowCallback;
   private onStatusChange: (status: "connected" | "disconnected" | "error") => void;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private connectionTimer: ReturnType<typeof setTimeout> | null = null;
-  private shouldReconnect = true;
-  private reconnectAttempts = 0;
 
   constructor(
     boardId: string,
@@ -123,81 +114,46 @@ export class AutodartsSocket {
     this.onStatusChange = onStatusChange;
   }
 
-  private clearConnectionTimer(): void {
-    if (this.connectionTimer) {
-      clearTimeout(this.connectionTimer);
-      this.connectionTimer = null;
-    }
-  }
-
   connect(): void {
-    if (this.ws) this.ws.close();
+    const url = `/api/autodarts-stream?token=${encodeURIComponent(this.token)}&boardId=${encodeURIComponent(this.boardId)}`;
+    this.es = new EventSource(url);
 
-    // Timeout de connexion : si le handshake ne réussit pas en 10s → erreur
-    this.connectionTimer = setTimeout(() => {
-      this.connectionTimer = null;
-      if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
-        this.shouldReconnect = false;
-        this.ws.close();
+    this.es.addEventListener("connected", () => {
+      this.onStatusChange("connected");
+    });
+
+    this.es.addEventListener("throw", (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        const throws: AutodartsThrow[] = data.throws;
+        if (throws?.length) {
+          const last = throws[throws.length - 1];
+          this.onThrow(parseThrowToSegment(last), last);
+        }
+      } catch { /* ignore */ }
+    });
+
+    this.es.addEventListener("disconnected", () => {
+      this.onStatusChange("disconnected");
+    });
+
+    this.es.addEventListener("error", () => {
+      this.onStatusChange("error");
+    });
+
+    // onerror de l'EventSource lui-même (problème réseau / reconnexion)
+    this.es.onerror = () => {
+      if (this.es?.readyState === EventSource.CLOSED) {
         this.onStatusChange("error");
       }
-    }, CONNECTION_TIMEOUT_MS);
-
-    try {
-      this.ws = new WebSocket(`${WS_URL}?token=${this.token}`);
-
-      this.ws.onopen = () => {
-        this.clearConnectionTimer();
-        this.reconnectAttempts = 0;
-        console.log("[AutodartsSocket] connected ✓");
-        this.onStatusChange("connected");
-        this.ws?.send(
-          JSON.stringify({
-            channel: "autodarts.boards",
-            type: "subscribe",
-            data: { boardId: this.boardId },
-          })
-        );
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data as string);
-          if (msg?.data?.throws) {
-            const lastThrow: AutodartsThrow = msg.data.throws[msg.data.throws.length - 1];
-            if (lastThrow) this.onThrow(parseThrowToSegment(lastThrow), lastThrow);
-          }
-        } catch { /* ignore */ }
-      };
-
-      this.ws.onerror = (e) => {
-        this.clearConnectionTimer();
-        console.error("[AutodartsSocket] WebSocket error", e);
-        this.onStatusChange("error");
-      };
-
-      this.ws.onclose = (e) => {
-        this.clearConnectionTimer();
-        console.warn(`[AutodartsSocket] closed — code: ${e.code}, reason: "${e.reason}", clean: ${e.wasClean}`);
-        if (this.shouldReconnect && this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          this.reconnectAttempts++;
-          this.onStatusChange("disconnected");
-          this.reconnectTimer = setTimeout(() => this.connect(), 5000);
-        } else {
-          this.onStatusChange("error");
-        }
-      };
-    } catch {
-      this.clearConnectionTimer();
-      this.onStatusChange("error");
-    }
+    };
   }
 
   disconnect(): void {
-    this.shouldReconnect = false;
-    this.clearConnectionTimer();
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.ws?.close();
-    this.ws = null;
+    this.es?.close();
+    this.es = null;
   }
 }
+
+// Alias pour compatibilité
+export { AutodartsSSE as AutodartsSocket };
