@@ -144,27 +144,46 @@ export function parseThrowToSegment(t: AutodartsThrow): DartSegment | null {
   return { type: "single", value };
 }
 
-// Nouveau format board events : { segment: { name: "T20", number: 20, bed: "triple", multiplier: 3 } }
+// Parse un objet segment Autodarts { bed, number, multiplier, ... } → DartSegment
+function parseSegmentObject(seg: Record<string, unknown>): DartSegment | null {
+  const bed = (seg.bed as string ?? "").toLowerCase();
+  const num = Number(seg.number ?? 0);
+  if (bed === "bullseye") return { type: "bullseye" };
+  if (bed === "bull") return { type: "bull" };
+  if (bed === "triple" && num) return { type: "triple", value: num };
+  if (bed === "double" && num) return { type: "double", value: num };
+  if (bed === "single" && num) return { type: "single", value: num };
+  return null; // outside / miss / inconnu
+}
+
+// Board events : plusieurs formats possibles selon version API
+// Format A (top-level) : { event: "Throw detected", segment: { bed, number, ... } }
+// Format B (throws[])  : { event: "Throw detected", throws: [{ segment: { bed, number } }] }
+// Format C (ancien)    : { throws: [{ segment: "20", multiplier: 3, points: 60 }] }
 export function parseBoardEventToSegment(data: Record<string, unknown>): DartSegment | null {
-  // Nouveau format (API officielle)
-  const seg = data.segment as Record<string, unknown> | undefined;
-  console.log("[parse] data brut:", JSON.stringify(data).slice(0, 300));
-  if (seg && typeof seg === "object") {
-    const bed = (seg.bed as string ?? "").toLowerCase();
-    const num = Number(seg.number ?? 0);
-    console.log("[parse] segment détecté → bed:", bed, "number:", num);
-    if (bed === "bullseye") return { type: "bullseye" };
-    if (bed === "bull") return { type: "bull" };
-    if (bed === "triple" && num) return { type: "triple", value: num };
-    if (bed === "double" && num) return { type: "double", value: num };
-    if (bed === "single" && num) return { type: "single", value: num };
-    if (bed === "outside" || bed === "miss" || num === 0) return null;
-    console.warn("[parse] bed inconnu:", bed, seg);
+  // Format A : segment objet au top-level
+  const topSeg = data.segment;
+  if (topSeg && typeof topSeg === "object") {
+    return parseSegmentObject(topSeg as Record<string, unknown>);
   }
-  // Ancien format fallback : tableau throws
-  const throws = data.throws as AutodartsThrow[] | undefined;
-  if (throws?.length) return parseThrowToSegment(throws[throws.length - 1]);
-  console.warn("[parse] Aucun segment trouvé dans:", JSON.stringify(data).slice(0, 200));
+
+  // Format B / C : tableau throws[]
+  const throws = data.throws as Array<Record<string, unknown>> | undefined;
+  if (throws?.length) {
+    const last = throws[throws.length - 1];
+    const seg = last.segment;
+
+    // Format B : segment est un objet { bed, number, ... }
+    if (seg && typeof seg === "object") {
+      return parseSegmentObject(seg as Record<string, unknown>);
+    }
+
+    // Format C : segment est une string "20", multiplier séparé
+    if (typeof seg === "string") {
+      return parseThrowToSegment(last as unknown as AutodartsThrow);
+    }
+  }
+
   return null;
 }
 
