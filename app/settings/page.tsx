@@ -1,61 +1,49 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LogOut, Wifi, WifiOff, Hash, Loader2 } from "lucide-react";
+import { LogOut, Wifi, WifiOff, Hash, Copy, Check, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { clearCredentials } from "@/lib/autodarts";
-import { generateCodeVerifier, generateCodeChallenge, generateState, KEYCLOAK_BASE, CLIENT_ID } from "@/lib/pkce";
+import { saveCredentials, loadRefreshToken, clearCredentials } from "@/lib/autodarts";
+
+const SNIPPET = `(function(){var k=Object.keys(localStorage).find(function(k){return k.includes('autodarts-play')});if(k){var d=JSON.parse(localStorage[k]);console.log('%cREFRESH TOKEN (copie tout ci-dessous) :','color:lime;font-weight:bold');console.log(d.refresh_token);}else{console.log('Token introuvable — assure-toi d\\'être connecté sur play.autodarts.io');}})()`;
 
 export default function SettingsPage() {
+  const [refreshToken, setRefreshToken] = useState("");
   const [boardId, setBoardId] = useState("");
   const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const storedBoardId = localStorage.getItem("autodarts_board_id");
-    const hasRefresh = !!localStorage.getItem("autodarts_refresh_token");
+    const storedRefresh = loadRefreshToken();
     if (storedBoardId) setBoardId(storedBoardId);
-    if (hasRefresh) setSaved(true);
+    if (storedRefresh) { setRefreshToken(storedRefresh); setSaved(true); }
   }, []);
 
-  const handleConnect = async () => {
-    if (!boardId.trim()) return;
-    setLoading(true);
+  const handleCopySnippet = () => {
+    navigator.clipboard.writeText(SNIPPET);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
-    // Sauvegarde le board ID et prépare le PKCE
+  const handleSave = () => {
+    if (!refreshToken.trim() || !boardId.trim()) return;
+    saveCredentials("", boardId.trim(), 0, refreshToken.trim());
     localStorage.setItem("autodarts_board_id", boardId.trim());
-    sessionStorage.setItem("pending_board_id", boardId.trim());
-
-    const verifier = generateCodeVerifier();
-    const challenge = await generateCodeChallenge(verifier);
-    const state = generateState();
-
-    sessionStorage.setItem("code_verifier", verifier);
-    sessionStorage.setItem("oauth_state", state);
-
-    const redirectUri = `${window.location.origin}/auth/callback`;
-
-    const params = new URLSearchParams({
-      client_id: CLIENT_ID,
-      redirect_uri: redirectUri,
-      response_type: "code",
-      scope: "openid",
-      code_challenge: challenge,
-      code_challenge_method: "S256",
-      state,
-    });
-
-    window.location.href = `${KEYCLOAK_BASE}/auth?${params.toString()}`;
+    setSaved(true);
   };
 
   const handleLogout = () => {
     clearCredentials();
+    setRefreshToken("");
     setBoardId("");
     setSaved(false);
   };
+
+  const canSave = refreshToken.trim().length > 20 && boardId.trim().length > 10;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
@@ -74,7 +62,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <CardTitle>Connexion Autodarts</CardTitle>
-                  <CardDescription>OAuth via ton compte Autodarts</CardDescription>
+                  <CardDescription>Refresh token — valable 30 jours</CardDescription>
                 </div>
               </div>
               <Badge variant={saved ? "success" : "secondary"}>
@@ -84,63 +72,102 @@ export default function SettingsPage() {
           </CardHeader>
 
           <CardContent className="flex flex-col gap-5">
-            {!saved ? (
-              <>
-                {/* Board ID */}
-                <div>
-                  <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
-                    <Hash className="w-3.5 h-3.5" />
-                    Board ID
-                  </label>
-                  <Input
-                    value={boardId}
-                    onChange={(e) => setBoardId(e.target.value)}
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    className="font-mono text-xs"
-                  />
-                  <p className="text-xs text-white/30 mt-1">
-                    Disponible dans autodarts.io → Paramètres → ton board
-                  </p>
-                </div>
+            {/* Étapes */}
+            <div className="flex flex-col gap-3">
 
-                <Button
-                  onClick={handleConnect}
-                  disabled={boardId.trim().length < 10 || loading}
-                  className="w-full"
-                  size="lg"
-                >
-                  {loading
-                    ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : <Wifi className="w-4 h-4" />
-                  }
-                  Se connecter avec Autodarts
-                </Button>
-
-                <p className="text-xs text-white/30 text-center">
-                  Tu seras redirigé vers la page de connexion Autodarts (Google ou email).
+              {/* Étape 1 */}
+              <div className="p-4 rounded-xl border border-white/10 bg-white/5 flex flex-col gap-3">
+                <p className="text-sm font-semibold text-white">
+                  <span className="text-emerald-400 mr-2">①</span>
+                  Ouvre play.autodarts.io et connecte-toi
                 </p>
-              </>
-            ) : (
-              <>
-                <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
-                  <p className="text-sm text-emerald-400 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Authentifié — l&apos;accès est renouvelé automatiquement.
-                  </p>
-                  {boardId && (
-                    <p className="text-xs text-white/30 mt-2 font-mono">{boardId}</p>
-                  )}
-                </div>
-
-                <Button
-                  variant="ghost"
-                  onClick={handleLogout}
-                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 w-full"
+                <a
+                  href="https://play.autodarts.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-xs text-emerald-400 hover:text-emerald-300 underline w-fit"
                 >
+                  <ExternalLink className="w-3 h-3" />
+                  play.autodarts.io
+                </a>
+              </div>
+
+              {/* Étape 2 */}
+              <div className="p-4 rounded-xl border border-white/10 bg-white/5 flex flex-col gap-3">
+                <p className="text-sm font-semibold text-white">
+                  <span className="text-emerald-400 mr-2">②</span>
+                  Ouvre la console (F12 → Console) et colle ce code
+                </p>
+                <div className="relative">
+                  <pre className="text-xs text-white/50 bg-black/40 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed">
+                    {SNIPPET}
+                  </pre>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="absolute top-2 right-2 h-7 px-2 text-white/40 hover:text-white"
+                    onClick={handleCopySnippet}
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-white/40">
+                  Appuie sur <kbd className="bg-white/10 px-1.5 py-0.5 rounded text-white/60">Entrée</kbd> — le refresh token s&apos;affiche en vert dans la console.
+                </p>
+              </div>
+
+              {/* Étape 3 */}
+              <div className="p-4 rounded-xl border border-white/10 bg-white/5 flex flex-col gap-3">
+                <p className="text-sm font-semibold text-white">
+                  <span className="text-emerald-400 mr-2">③</span>
+                  Colle le refresh token ci-dessous
+                </p>
+                <textarea
+                  value={refreshToken}
+                  onChange={(e) => { setRefreshToken(e.target.value); setSaved(false); }}
+                  placeholder="eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIi..."
+                  rows={3}
+                  className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-xs text-white font-mono placeholder:text-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 resize-none"
+                />
+              </div>
+
+              {/* Board ID */}
+              <div className="p-4 rounded-xl border border-white/10 bg-white/5 flex flex-col gap-3">
+                <p className="text-sm font-semibold text-white">
+                  <span className="text-emerald-400 mr-2">④</span>
+                  Entre ton Board ID
+                </p>
+                <Input
+                  value={boardId}
+                  onChange={(e) => { setBoardId(e.target.value); setSaved(false); }}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  className="font-mono text-xs"
+                />
+                <p className="text-xs text-white/30">
+                  Disponible dans autodarts.io → Paramètres → ton board
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3">
+              <Button onClick={handleSave} disabled={!canSave} className="flex-1">
+                <Wifi className="w-4 h-4" />
+                {saved ? "Mis à jour" : "Enregistrer"}
+              </Button>
+              {saved && (
+                <Button variant="ghost" onClick={handleLogout} className="text-red-400 hover:text-red-300 hover:bg-red-500/10">
                   <LogOut className="w-4 h-4" />
-                  Se déconnecter
+                  Déconnecter
                 </Button>
-              </>
+              )}
+            </div>
+
+            {saved && (
+              <p className="text-xs text-emerald-400/80 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Connecté — l&apos;access token est renouvelé automatiquement à chaque session.
+              </p>
             )}
           </CardContent>
         </Card>
