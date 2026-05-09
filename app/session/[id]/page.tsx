@@ -45,8 +45,12 @@ export default function SessionPage() {
   // WebSocket connection
   useEffect(() => {
     if (!session || session.status === "done") return;
-    const creds = loadCredentials();
-    if (!creds) return;
+    // On a besoin au minimum d'un refresh token ou d'un access token valide
+    const hasToken = !!(
+      loadCredentials() ||
+      (typeof window !== "undefined" && localStorage.getItem("autodarts_refresh_token"))
+    );
+    if (!hasToken) return;
 
     setWsStatus("connecting");
     let cancelled = false;
