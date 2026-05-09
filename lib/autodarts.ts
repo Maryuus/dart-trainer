@@ -145,15 +145,19 @@ export function parseThrowToSegment(t: AutodartsThrow): DartSegment | null {
 }
 
 // Parse un objet segment { bed, number } → DartSegment
+// Valeurs bed connues : "SingleInner", "SingleOuter", "Double", "Triple",
+//   "Bull", "BullsEye", "Miss", "Outside"
 function parseSegmentObject(seg: Record<string, unknown>): DartSegment | null {
   const bed = String(seg.bed ?? seg.type ?? "").toLowerCase();
   const num = Number(seg.number ?? seg.value ?? 0);
-  if (bed === "bullseye" || bed === "double_bull") return { type: "bullseye" };
-  if (bed === "bull" || bed === "single_bull") return { type: "bull" };
+  if (bed === "bullseye" || bed === "bullseye" || bed === "double_bull" || bed === "doublebull") return { type: "bullseye" };
+  if (bed === "bull" || bed === "single_bull" || bed === "singlebull") return { type: "bull" };
   if (bed === "triple" && num) return { type: "triple", value: num };
   if (bed === "double" && num) return { type: "double", value: num };
-  if ((bed === "single" || bed === "small" || bed === "large") && num) return { type: "single", value: num };
-  return null;
+  // "single", "singleinner", "singleouter", "small", "large"
+  if (bed.startsWith("single") && num) return { type: "single", value: num };
+  if ((bed === "small" || bed === "large") && num) return { type: "single", value: num };
+  return null; // "miss", "outside" ou inconnu
 }
 
 // Cherche récursivement un objet segment { bed + number } dans n'importe quelle structure
@@ -183,7 +187,7 @@ function findSegmentDeep(obj: unknown, depth = 0): DartSegment | null {
     }
 
     // Clés prioritaires à explorer en premier
-    const priority = ["segment", "throws", "data", "currentThrow", "lastThrow"];
+    const priority = ["segment", "throw", "throws", "data", "currentThrow", "lastThrow"];
     for (const key of priority) {
       if (key in rec) {
         const r = findSegmentDeep(rec[key], depth + 1);
