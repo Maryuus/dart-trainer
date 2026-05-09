@@ -33,6 +33,7 @@ export default function SessionPage() {
     reset,
     recordThrow,
     manualThrow,
+    correctThrow,
   } = useRoutineSession(routine);
 
   useEffect(() => {
@@ -226,7 +227,13 @@ export default function SessionPage() {
                 </div>
 
                 {/* Throw history for this step */}
-                <ThrowHistory results={stepResults} totalThrows={currentStep.throws} />
+                <ThrowHistory
+                  results={stepResults}
+                  totalThrows={currentStep.throws}
+                  onCorrect={(throwIndex) =>
+                    session && correctThrow(session.currentStepIndex, throwIndex)
+                  }
+                />
 
                 {/* Boutons toujours visibles : auto si connecté, fallback sinon */}
                 <div className="flex flex-col items-center gap-2">

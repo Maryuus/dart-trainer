@@ -101,6 +101,25 @@ export function useRoutineSession(routine: Routine | null) {
     [routine, session, recordThrow]
   );
 
+  // Corriger un lancer déjà enregistré (basculer hit ↔ missed)
+  const correctThrow = useCallback(
+    (stepIndex: number, throwIndex: number) => {
+      const current = sessionRef.current;
+      if (!current) return;
+      const updated: SessionState = {
+        ...current,
+        results: current.results.map((r) =>
+          r.stepIndex === stepIndex && r.throwIndex === throwIndex
+            ? { ...r, hit: !r.hit }
+            : r
+        ),
+      };
+      setSession(updated);
+      sessionRef.current = updated;
+    },
+    []
+  );
+
   const stepResults = session
     ? session.results.filter((r) => r.stepIndex === session.currentStepIndex)
     : [];
@@ -120,5 +139,6 @@ export function useRoutineSession(routine: Routine | null) {
     reset,
     recordThrow,
     manualThrow,
+    correctThrow,
   };
 }
