@@ -6,36 +6,36 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { saveCredentials, loadCredentials, clearCredentials } from "@/lib/autodarts";
+import { saveCredentials, loadCredentials, loadRefreshToken, clearCredentials } from "@/lib/autodarts";
 
 export default function SettingsPage() {
-  const [token, setToken] = useState("");
+  const [refreshToken, setRefreshToken] = useState("");
   const [boardId, setBoardId] = useState("");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    const creds = loadCredentials();
-    if (creds) {
-      setToken(creds.token);
-      setBoardId(creds.boardId);
-      setSaved(true);
-    }
+    const storedRefresh = loadRefreshToken();
+    const storedBoardId = localStorage.getItem("autodarts_board_id");
+    if (storedRefresh) { setRefreshToken(storedRefresh); setSaved(true); }
+    if (storedBoardId) setBoardId(storedBoardId);
   }, []);
 
   const handleSave = () => {
-    if (!token.trim() || !boardId.trim()) return;
-    saveCredentials(token.trim(), boardId.trim(), 3600 * 8);
+    if (!refreshToken.trim() || !boardId.trim()) return;
+    // Sauvegarde le refresh token + board ID (l'access token sera obtenu automatiquement)
+    saveCredentials("", boardId.trim(), 0, refreshToken.trim());
+    localStorage.setItem("autodarts_board_id", boardId.trim());
     setSaved(true);
   };
 
   const handleLogout = () => {
     clearCredentials();
-    setToken("");
+    setRefreshToken("");
     setBoardId("");
     setSaved(false);
   };
 
-  const canSave = token.trim().length > 10 && boardId.trim().length > 10;
+  const canSave = refreshToken.trim().length > 10 && boardId.trim().length > 10;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
@@ -66,32 +66,33 @@ export default function SettingsPage() {
           <CardContent className="flex flex-col gap-5">
             {/* Instructions */}
             <div className="p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 text-sm flex flex-col gap-2">
-              <p className="font-semibold text-white/80">Comment obtenir ton token :</p>
+              <p className="font-semibold text-white/80">Comment obtenir ton refresh token :</p>
               <ol className="text-white/60 flex flex-col gap-1 list-decimal list-inside">
-                <li>Va sur <strong className="text-white">play.autodarts.io</strong> (connecté avec Google)</li>
+                <li>Va sur <strong className="text-white">play.autodarts.io</strong> et connecte-toi avec Google</li>
                 <li>Appuie sur <strong className="text-white">F12</strong> → onglet <strong className="text-white">Réseau</strong></li>
-                <li>Clique n&apos;importe où sur la page pour déclencher une requête</li>
-                <li>Cherche une requête vers <strong className="text-white">api.autodarts.io</strong></li>
-                <li>Clique dessus → <strong className="text-white">En-têtes</strong> → trouve <code className="bg-white/10 px-1 rounded">Authorization: Bearer xxx...</code></li>
-                <li>Copie tout ce qui est après <code className="bg-white/10 px-1 rounded">Bearer </code></li>
+                <li>Recharge la page (<strong className="text-white">F5</strong>)</li>
+                <li>Dans la liste, cherche une requête vers <strong className="text-white">login.autodarts.io</strong> avec <code className="bg-white/10 px-1 rounded">/token</code></li>
+                <li>Clique dessus → onglet <strong className="text-white">Réponse</strong></li>
+                <li>Copie la valeur de <code className="bg-white/10 px-1 rounded">refresh_token</code> (très long texte)</li>
               </ol>
+              <p className="text-amber-400/70 text-xs mt-1">⚠️ Ne copie pas l&apos;access_token (expire en 5 min) — prends bien le refresh_token (valable 30 jours)</p>
             </div>
 
-            {/* Token input */}
+            {/* Refresh token input */}
             <div>
               <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
                 <Key className="w-3.5 h-3.5" />
-                Token OAuth (Bearer)
+                Refresh Token
               </label>
               <textarea
-                value={token}
-                onChange={(e) => { setToken(e.target.value); setSaved(false); }}
-                placeholder="eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIi..."
+                value={refreshToken}
+                onChange={(e) => { setRefreshToken(e.target.value); setSaved(false); }}
+                placeholder="eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIi..."
                 rows={3}
                 className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-xs text-white font-mono placeholder:text-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 resize-none"
               />
               <p className="text-xs text-white/30 mt-1">
-                Le token expire après quelques heures — reviens ici pour le renouveler si la connexion est perdue.
+                Valable ~30 jours. L&apos;access token sera renouvelé automatiquement à chaque session.
               </p>
             </div>
 
@@ -133,7 +134,7 @@ export default function SettingsPage() {
             {saved && (
               <p className="text-xs text-emerald-400/80 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Token enregistré — connexion WebSocket active pendant les sessions.
+                Refresh token enregistré — l&apos;accès sera renouvelé automatiquement.
               </p>
             )}
           </CardContent>

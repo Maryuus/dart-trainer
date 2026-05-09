@@ -10,7 +10,7 @@ import { DartBoard } from "@/components/DartBoard";
 import { ThrowHistory } from "@/components/ThrowHistory";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { loadRoutines } from "@/lib/routines";
-import { loadCredentials, validateToken, AutodartsSocket, parseThrowToSegment } from "@/lib/autodarts";
+import { loadCredentials, getValidCredentials, AutodartsSocket, parseThrowToSegment } from "@/lib/autodarts";
 import { segmentFullLabel, formatDuration } from "@/lib/utils";
 import { useRoutineSession } from "@/hooks/useRoutineSession";
 import type { Routine, DartSegment, AutodartsThrow } from "@/lib/types";
@@ -48,26 +48,31 @@ export default function SessionPage() {
     const creds = loadCredentials();
     if (!creds) return;
 
-    const validation = validateToken(creds.token);
-    if (!validation.valid) {
-      setWsStatus("error");
-      return;
-    }
-
     setWsStatus("connecting");
-    const socket = new AutodartsSocket(
-      creds.boardId,
-      creds.token,
-      (segment: DartSegment | null, _raw: AutodartsThrow) => {
-        recordThrow(segment);
-      },
-      (status) => {
-        setWsStatus(status === "connected" ? "connected" : status === "error" ? "error" : "disconnected");
-      }
-    );
-    socket.connect();
+    let cancelled = false;
+    let socket: InstanceType<typeof AutodartsSocket> | null = null;
 
-    return () => { socket.disconnect(); setWsStatus("disconnected"); };
+    getValidCredentials().then((resolved) => {
+      if (cancelled || !resolved) {
+        if (!cancelled) setWsStatus("error");
+        return;
+      }
+      socket = new AutodartsSocket(
+        resolved.boardId,
+        resolved.token,
+        (segment: DartSegment | null, _raw: AutodartsThrow) => { recordThrow(segment); },
+        (status) => {
+          setWsStatus(status === "connected" ? "connected" : status === "error" ? "error" : "disconnected");
+        }
+      );
+      socket.connect();
+    });
+
+    return () => {
+      cancelled = true;
+      socket?.disconnect();
+      setWsStatus("disconnected");
+    };
   }, [session?.status, recordThrow]);
 
   // Elapsed timer
@@ -90,7 +95,7 @@ export default function SessionPage() {
         routine.steps.length) * 100
     : 0;
 
-  const hasAutodarts = !!loadCredentials();
+  const hasAutodarts = !!(loadCredentials() ?? (typeof window !== "undefined" && localStorage.getItem("autodarts_refresh_token")));
 
   // Done screen
   if (session?.status === "done") {

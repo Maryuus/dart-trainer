@@ -2,10 +2,20 @@ import type { AutodartsThrow, DartSegment } from "./types";
 
 // --- Persistence ---
 
-export function saveCredentials(token: string, boardId: string, expiresIn: number): void {
+export function saveCredentials(
+  token: string,
+  boardId: string,
+  expiresIn: number,
+  refreshToken?: string
+): void {
   localStorage.setItem("autodarts_token", token);
   localStorage.setItem("autodarts_board_id", boardId);
   localStorage.setItem("autodarts_token_expires", String(Date.now() + expiresIn * 1000));
+  if (refreshToken) localStorage.setItem("autodarts_refresh_token", refreshToken);
+}
+
+export function saveRefreshToken(refreshToken: string): void {
+  localStorage.setItem("autodarts_refresh_token", refreshToken);
 }
 
 export function saveBoardId(boardId: string): void {
@@ -18,19 +28,63 @@ export function loadCredentials(): { token: string; boardId: string } | null {
   const boardId = localStorage.getItem("autodarts_board_id");
   const expires = Number(localStorage.getItem("autodarts_token_expires") ?? 0);
   if (!token || !boardId) return null;
+  if (!token.startsWith("eyJ")) return null; // pas un vrai JWT
   if (expires && Date.now() > expires) return null; // token expiré
   return { token, boardId };
+}
+
+export function loadRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("autodarts_refresh_token");
 }
 
 export function clearCredentials(): void {
   localStorage.removeItem("autodarts_token");
   localStorage.removeItem("autodarts_board_id");
   localStorage.removeItem("autodarts_token_expires");
+  localStorage.removeItem("autodarts_refresh_token");
 }
 
 // backward compat
 export function loadToken(): string | null {
   return loadCredentials()?.token ?? null;
+}
+
+// --- Refresh token → nouvel access token ---
+
+export async function refreshAccessToken(
+  refreshToken: string,
+  boardId: string
+): Promise<{ token: string; boardId: string } | null> {
+  try {
+    const res = await fetch("/api/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    saveCredentials(data.access_token, boardId, data.expires_in, data.refresh_token);
+    return { token: data.access_token, boardId };
+  } catch {
+    return null;
+  }
+}
+
+// Retourne les credentials valides (refresh auto si token absent/expiré)
+export async function getValidCredentials(): Promise<{ token: string; boardId: string } | null> {
+  if (typeof window === "undefined") return null;
+
+  // Si on a un access token encore valide, on l'utilise directement
+  const creds = loadCredentials();
+  if (creds) return creds;
+
+  // Token absent ou expiré → on rafraîchit via le refresh token
+  const boardId = localStorage.getItem("autodarts_board_id");
+  const refreshToken = loadRefreshToken();
+  if (!boardId || !refreshToken) return null;
+
+  return refreshAccessToken(refreshToken, boardId);
 }
 
 // --- Auth via Next.js API proxy ---
