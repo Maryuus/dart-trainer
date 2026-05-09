@@ -144,47 +144,70 @@ export function parseThrowToSegment(t: AutodartsThrow): DartSegment | null {
   return { type: "single", value };
 }
 
-// Parse un objet segment Autodarts { bed, number, multiplier, ... } → DartSegment
+// Parse un objet segment { bed, number } → DartSegment
 function parseSegmentObject(seg: Record<string, unknown>): DartSegment | null {
-  const bed = (seg.bed as string ?? "").toLowerCase();
-  const num = Number(seg.number ?? 0);
-  if (bed === "bullseye") return { type: "bullseye" };
-  if (bed === "bull") return { type: "bull" };
+  const bed = String(seg.bed ?? seg.type ?? "").toLowerCase();
+  const num = Number(seg.number ?? seg.value ?? 0);
+  if (bed === "bullseye" || bed === "double_bull") return { type: "bullseye" };
+  if (bed === "bull" || bed === "single_bull") return { type: "bull" };
   if (bed === "triple" && num) return { type: "triple", value: num };
   if (bed === "double" && num) return { type: "double", value: num };
-  if (bed === "single" && num) return { type: "single", value: num };
-  return null; // outside / miss / inconnu
+  if ((bed === "single" || bed === "small" || bed === "large") && num) return { type: "single", value: num };
+  return null;
 }
 
-// Board events : plusieurs formats possibles selon version API
-// Format A (top-level) : { event: "Throw detected", segment: { bed, number, ... } }
-// Format B (throws[])  : { event: "Throw detected", throws: [{ segment: { bed, number } }] }
-// Format C (ancien)    : { throws: [{ segment: "20", multiplier: 3, points: 60 }] }
-export function parseBoardEventToSegment(data: Record<string, unknown>): DartSegment | null {
-  // Format A : segment objet au top-level
-  const topSeg = data.segment;
-  if (topSeg && typeof topSeg === "object") {
-    return parseSegmentObject(topSeg as Record<string, unknown>);
+// Cherche récursivement un objet segment { bed + number } dans n'importe quelle structure
+function findSegmentDeep(obj: unknown, depth = 0): DartSegment | null {
+  if (depth > 6 || obj === null || obj === undefined) return null;
+
+  if (Array.isArray(obj)) {
+    // Priorité au dernier élément (lancer le plus récent)
+    for (let i = obj.length - 1; i >= 0; i--) {
+      const r = findSegmentDeep(obj[i], depth + 1);
+      if (r) return r;
+    }
+    return null;
   }
 
-  // Format B / C : tableau throws[]
-  const throws = data.throws as Array<Record<string, unknown>> | undefined;
-  if (throws?.length) {
-    const last = throws[throws.length - 1];
-    const seg = last.segment;
+  if (typeof obj === "object") {
+    const rec = obj as Record<string, unknown>;
 
-    // Format B : segment est un objet { bed, number, ... }
-    if (seg && typeof seg === "object") {
-      return parseSegmentObject(seg as Record<string, unknown>);
+    // Si cet objet a "bed" et "number" c'est un segment
+    if (("bed" in rec || "type" in rec) && ("number" in rec || "value" in rec)) {
+      return parseSegmentObject(rec);
     }
 
-    // Format C : segment est une string "20", multiplier séparé
-    if (typeof seg === "string") {
-      return parseThrowToSegment(last as unknown as AutodartsThrow);
+    // Ancien format string : { segment: "20", multiplier: 3 }
+    if (typeof rec.segment === "string" && "multiplier" in rec) {
+      return parseThrowToSegment(rec as unknown as AutodartsThrow);
+    }
+
+    // Clés prioritaires à explorer en premier
+    const priority = ["segment", "throws", "data", "currentThrow", "lastThrow"];
+    for (const key of priority) {
+      if (key in rec) {
+        const r = findSegmentDeep(rec[key], depth + 1);
+        if (r) return r;
+      }
+    }
+
+    // Reste des clés (sauf bruit)
+    const skip = new Set(["coords", "timestamp", "game_id", "player_id", "board_id", "image"]);
+    for (const key of Object.keys(rec)) {
+      if (skip.has(key) || priority.includes(key)) continue;
+      const r = findSegmentDeep(rec[key], depth + 1);
+      if (r) return r;
     }
   }
 
   return null;
+}
+
+export function parseBoardEventToSegment(data: Record<string, unknown>): DartSegment | null {
+  const result = findSegmentDeep(data);
+  console.log("[parse] brut:", JSON.stringify(data).slice(0, 400));
+  console.log("[parse] résultat:", result ? JSON.stringify(result) : "null (Miss)");
+  return result;
 }
 
 export function segmentsMatch(target: DartSegment, thrown: DartSegment): boolean {
@@ -205,7 +228,7 @@ export function segmentsMatch(target: DartSegment, thrown: DartSegment): boolean
 
 // --- SSE proxy (remplace WebSocket direct bloqué par l'Origin Autodarts) ---
 
-export type ThrowCallback = (thrown: DartSegment | null, raw: AutodartsThrow) => void;
+export type ThrowCallback = (thrown: DartSegment | null, raw: AutodartsThrow, rawJson?: string) => void;
 
 export class AutodartsSSE {
   private es: EventSource | null = null;
@@ -245,13 +268,12 @@ export class AutodartsSSE {
       try {
         const data = JSON.parse(e.data) as Record<string, unknown>;
         const segment = parseBoardEventToSegment(data);
-        // Reconstitue un AutodartsThrow minimal pour la compatibilité
         const raw: AutodartsThrow = {
-          segment: String((data.segment as Record<string, unknown>)?.number ?? "0"),
-          multiplier: Number((data.segment as Record<string, unknown>)?.multiplier ?? 1),
-          points: Number((data.segment as Record<string, unknown>)?.points ?? 0),
+          segment: "0",
+          multiplier: 1,
+          points: 0,
         };
-        this.onThrow(segment, raw);
+        this.onThrow(segment, raw, e.data);
       } catch { /* ignore */ }
     });
 

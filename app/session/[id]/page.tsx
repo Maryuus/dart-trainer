@@ -21,6 +21,7 @@ export default function SessionPage() {
   const [routine, setRoutine] = useState<Routine | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [wsStatus, setWsStatus] = useState<"disconnected" | "connecting" | "connected" | "error">("disconnected");
+  const [lastRawEvent, setLastRawEvent] = useState<string | null>(null);
 
   const {
     session,
@@ -65,7 +66,10 @@ export default function SessionPage() {
       socket = new AutodartsSocket(
         resolved.boardId,
         resolved.token,
-        (segment: DartSegment | null, _raw: AutodartsThrow) => { recordThrow(segment); },
+        (segment: DartSegment | null, _raw: AutodartsThrow, rawJson?: string) => {
+          if (rawJson) setLastRawEvent(rawJson);
+          recordThrow(segment);
+        },
         (status) => {
           setWsStatus(status === "connected" ? "connected" : status === "error" ? "error" : "disconnected");
         }
@@ -216,7 +220,7 @@ export default function SessionPage() {
                   hit={lastThrow?.hit ?? null}
                 />
 
-                {/* Dernier lancer détecté — debug visuel */}
+                {/* Dernier lancer détecté */}
                 {lastThrow && (
                   <div className={`text-xs px-3 py-1.5 rounded-full border font-mono ${
                     lastThrow.hit
@@ -229,6 +233,18 @@ export default function SessionPage() {
                     </span>
                     {" "}→ {lastThrow.hit ? "✓ Touché" : "✗ Raté"}
                   </div>
+                )}
+
+                {/* DEBUG — JSON brut reçu d'Autodarts */}
+                {lastRawEvent && (
+                  <details className="w-full text-left">
+                    <summary className="text-xs text-white/20 cursor-pointer hover:text-white/40">
+                      JSON brut (debug)
+                    </summary>
+                    <pre className="mt-1 text-xs text-white/40 bg-black/40 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all font-mono leading-relaxed max-h-40">
+                      {JSON.stringify(JSON.parse(lastRawEvent), null, 2)}
+                    </pre>
+                  </details>
                 )}
 
                 {/* Throw counter */}
