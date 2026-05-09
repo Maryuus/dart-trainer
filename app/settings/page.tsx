@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { saveCredentials, loadRefreshToken, clearCredentials } from "@/lib/autodarts";
 
-const SNIPPET = `(function(){var k=Object.keys(localStorage).find(function(k){return k.includes('autodarts-play')});if(k){var d=JSON.parse(localStorage[k]);console.log('%cREFRESH TOKEN (copie tout ci-dessous) :','color:lime;font-weight:bold');console.log(d.refresh_token);}else{console.log('Token introuvable — assure-toi d\\'être connecté sur play.autodarts.io');}})()`;
+const SNIPPET = `(function(){var found=false;Object.keys(localStorage).forEach(function(k){try{var d=JSON.parse(localStorage[k]);if(d&&d.refresh_token){console.log('%cCLE: '+k,'color:gray');console.log('%cREFRESH TOKEN - copie tout ce texte :','color:lime;font-weight:bold;font-size:14px');console.log(d.refresh_token);found=true;}}catch(e){}});if(!found){console.log('%cAucun refresh token trouve. Es-tu bien connecte sur play.autodarts.io ?','color:orange');}})();`;
 
 export default function SettingsPage() {
   const [refreshToken, setRefreshToken] = useState("");

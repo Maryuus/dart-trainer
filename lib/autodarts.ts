@@ -57,16 +57,26 @@ export async function refreshAccessToken(
   boardId: string
 ): Promise<{ token: string; boardId: string } | null> {
   try {
+    console.log("[auth] Appel /api/refresh...");
     const res = await fetch("/api/refresh", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!res.ok) return null;
     const data = await res.json();
+    if (!res.ok) {
+      console.error("[auth] Refresh échoué:", res.status, data);
+      return null;
+    }
+    if (!data.access_token) {
+      console.error("[auth] Refresh OK mais access_token absent:", data);
+      return null;
+    }
+    console.log("[auth] Refresh OK ✓ expires_in:", data.expires_in, "s");
     saveCredentials(data.access_token, boardId, data.expires_in, data.refresh_token);
     return { token: data.access_token, boardId };
-  } catch {
+  } catch (e) {
+    console.error("[auth] Erreur réseau refresh:", e);
     return null;
   }
 }
@@ -189,10 +199,17 @@ export class AutodartsSSE {
   }
 
   connect(): void {
+    if (!this.token || !this.token.startsWith("eyJ")) {
+      console.error("[SSE] Token invalide, connexion annulée:", this.token?.slice(0, 20));
+      this.onStatusChange("error");
+      return;
+    }
+    console.log("[SSE] Connexion SSE... boardId:", this.boardId, "token:", this.token.slice(0, 30) + "...");
     const url = `/api/autodarts-stream?token=${encodeURIComponent(this.token)}&boardId=${encodeURIComponent(this.boardId)}`;
     this.es = new EventSource(url);
 
     this.es.addEventListener("connected", () => {
+      console.log("[SSE] ✓ Connecté à Autodarts");
       this.onStatusChange("connected");
     });
 
@@ -211,15 +228,17 @@ export class AutodartsSSE {
     });
 
     this.es.addEventListener("disconnected", () => {
+      console.warn("[SSE] event: disconnected reçu");
       this.onStatusChange("disconnected");
     });
 
     this.es.addEventListener("error", () => {
+      console.warn("[SSE] event: error reçu");
       this.onStatusChange("error");
     });
 
-    // onerror de l'EventSource lui-même (problème réseau / reconnexion)
-    this.es.onerror = () => {
+    this.es.onerror = (e) => {
+      console.warn("[SSE] onerror readyState:", this.es?.readyState, e);
       if (this.es?.readyState === EventSource.CLOSED) {
         this.onStatusChange("error");
       }
