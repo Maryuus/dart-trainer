@@ -216,6 +216,21 @@ export default function SessionPage() {
                   hit={lastThrow?.hit ?? null}
                 />
 
+                {/* Dernier lancer détecté — debug visuel */}
+                {lastThrow && (
+                  <div className={`text-xs px-3 py-1.5 rounded-full border font-mono ${
+                    lastThrow.hit
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                      : "bg-red-500/10 border-red-500/30 text-red-400"
+                  }`}>
+                    Détecté&nbsp;:{" "}
+                    <span className="font-bold">
+                      {lastThrow.segment ? segmentFullLabel(lastThrow.segment) : "Miss"}
+                    </span>
+                    {" "}→ {lastThrow.hit ? "✓ Touché" : "✗ Raté"}
+                  </div>
+                )}
+
                 {/* Throw counter */}
                 <div className="text-center">
                   <div className="text-5xl font-black text-white">

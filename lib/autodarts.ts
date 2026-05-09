@@ -148,31 +148,40 @@ export function parseThrowToSegment(t: AutodartsThrow): DartSegment | null {
 export function parseBoardEventToSegment(data: Record<string, unknown>): DartSegment | null {
   // Nouveau format (API officielle)
   const seg = data.segment as Record<string, unknown> | undefined;
+  console.log("[parse] data brut:", JSON.stringify(data).slice(0, 300));
   if (seg && typeof seg === "object") {
-    const bed = seg.bed as string;
-    const num = seg.number as number;
+    const bed = (seg.bed as string ?? "").toLowerCase();
+    const num = Number(seg.number ?? 0);
+    console.log("[parse] segment détecté → bed:", bed, "number:", num);
     if (bed === "bullseye") return { type: "bullseye" };
     if (bed === "bull") return { type: "bull" };
     if (bed === "triple" && num) return { type: "triple", value: num };
     if (bed === "double" && num) return { type: "double", value: num };
     if (bed === "single" && num) return { type: "single", value: num };
+    if (bed === "outside" || bed === "miss" || num === 0) return null;
+    console.warn("[parse] bed inconnu:", bed, seg);
   }
   // Ancien format fallback : tableau throws
   const throws = data.throws as AutodartsThrow[] | undefined;
   if (throws?.length) return parseThrowToSegment(throws[throws.length - 1]);
+  console.warn("[parse] Aucun segment trouvé dans:", JSON.stringify(data).slice(0, 200));
   return null;
 }
 
 export function segmentsMatch(target: DartSegment, thrown: DartSegment): boolean {
-  if (target.type !== thrown.type) return false;
-  if (target.type === "bull" || target.type === "bullseye") return true;
-  if (
-    (target.type === "single" || target.type === "double" || target.type === "triple") &&
-    (thrown.type === "single" || thrown.type === "double" || thrown.type === "triple")
-  ) {
-    return target.value === thrown.value;
-  }
-  return false;
+  const match = (() => {
+    if (target.type !== thrown.type) return false;
+    if (target.type === "bull" || target.type === "bullseye") return true;
+    if (
+      (target.type === "single" || target.type === "double" || target.type === "triple") &&
+      (thrown.type === "single" || thrown.type === "double" || thrown.type === "triple")
+    ) {
+      return target.value === thrown.value;
+    }
+    return false;
+  })();
+  console.log(`[match] cible: ${JSON.stringify(target)} | lancé: ${JSON.stringify(thrown)} | résultat: ${match ? "✓ TOUCHÉ" : "✗ RATÉ"}`);
+  return match;
 }
 
 // --- SSE proxy (remplace WebSocket direct bloqué par l'Origin Autodarts) ---
