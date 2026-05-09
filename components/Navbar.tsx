@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Target, ListChecks, Settings, Home } from "lucide-react";
+import { Target, ListChecks, Settings, Home, BarChart2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links = [
   { href: "/", label: "Accueil", icon: Home },
   { href: "/routines", label: "Routines", icon: ListChecks },
+  { href: "/stats", label: "Stats", icon: BarChart2 },
   { href: "/settings", label: "Paramètres", icon: Settings },
 ];
 

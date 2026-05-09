@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { segmentsMatch } from "@/lib/autodarts";
+import { saveSession } from "@/lib/stats";
 import type { DartSegment, Routine, SessionState, ThrowResult } from "@/lib/types";
 
 function initSession(routineId: string): SessionState {
@@ -63,6 +64,7 @@ export function useRoutineSession(routine: Routine | null) {
       const stepDone = newThrowIndex >= step.throws;
       const lastStep = current.currentStepIndex >= routine.steps.length - 1;
 
+      const newStatus = stepDone && lastStep ? "done" : stepDone ? "step_complete" : "active";
       const updated: SessionState = {
         ...current,
         results: [...current.results, result],
@@ -70,11 +72,22 @@ export function useRoutineSession(routine: Routine | null) {
         currentStepIndex: stepDone
           ? Math.min(current.currentStepIndex + 1, routine.steps.length - 1)
           : current.currentStepIndex,
-        status: stepDone && lastStep ? "done" : stepDone ? "step_complete" : "active",
+        status: newStatus,
       };
 
       setSession(updated);
       sessionRef.current = updated;
+
+      // Sauvegarde auto quand la session est terminée
+      if (newStatus === "done") {
+        saveSession({
+          routineId: routine.id,
+          routineName: routine.name,
+          completedAt: Date.now(),
+          duration: Date.now() - current.startedAt,
+          results: updated.results,
+        });
+      }
 
       // Auto-resume from step_complete after a brief pause
       if (updated.status === "step_complete") {
