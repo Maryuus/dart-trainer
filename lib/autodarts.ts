@@ -121,6 +121,7 @@ export function validateToken(token: string): { valid: boolean; error?: string }
 
 // --- Segment parsing ---
 
+// Ancien format : { segment: "20", multiplier: 3, points: 60 }
 export function parseThrowToSegment(t: AutodartsThrow): DartSegment | null {
   const seg = t.segment?.toUpperCase();
   if (!seg) return null;
@@ -131,6 +132,25 @@ export function parseThrowToSegment(t: AutodartsThrow): DartSegment | null {
   if (t.multiplier === 3) return { type: "triple", value };
   if (t.multiplier === 2) return { type: "double", value };
   return { type: "single", value };
+}
+
+// Nouveau format board events : { segment: { name: "T20", number: 20, bed: "triple", multiplier: 3 } }
+export function parseBoardEventToSegment(data: Record<string, unknown>): DartSegment | null {
+  // Nouveau format (API officielle)
+  const seg = data.segment as Record<string, unknown> | undefined;
+  if (seg && typeof seg === "object") {
+    const bed = seg.bed as string;
+    const num = seg.number as number;
+    if (bed === "bullseye") return { type: "bullseye" };
+    if (bed === "bull") return { type: "bull" };
+    if (bed === "triple" && num) return { type: "triple", value: num };
+    if (bed === "double" && num) return { type: "double", value: num };
+    if (bed === "single" && num) return { type: "single", value: num };
+  }
+  // Ancien format fallback : tableau throws
+  const throws = data.throws as AutodartsThrow[] | undefined;
+  if (throws?.length) return parseThrowToSegment(throws[throws.length - 1]);
+  return null;
 }
 
 export function segmentsMatch(target: DartSegment, thrown: DartSegment): boolean {
@@ -178,12 +198,15 @@ export class AutodartsSSE {
 
     this.es.addEventListener("throw", (e: MessageEvent) => {
       try {
-        const data = JSON.parse(e.data);
-        const throws: AutodartsThrow[] = data.throws;
-        if (throws?.length) {
-          const last = throws[throws.length - 1];
-          this.onThrow(parseThrowToSegment(last), last);
-        }
+        const data = JSON.parse(e.data) as Record<string, unknown>;
+        const segment = parseBoardEventToSegment(data);
+        // Reconstitue un AutodartsThrow minimal pour la compatibilité
+        const raw: AutodartsThrow = {
+          segment: String((data.segment as Record<string, unknown>)?.number ?? "0"),
+          multiplier: Number((data.segment as Record<string, unknown>)?.multiplier ?? 1),
+          points: Number((data.segment as Record<string, unknown>)?.points ?? 0),
+        };
+        this.onThrow(segment, raw);
       } catch { /* ignore */ }
     });
 

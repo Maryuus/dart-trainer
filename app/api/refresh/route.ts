@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
 
   const body = new URLSearchParams({
     grant_type: "refresh_token",
-    client_id: "autodarts-play",
+    client_id: "autodarts-app",
     refresh_token,
   });
 

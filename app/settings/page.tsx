@@ -1,41 +1,52 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LogOut, Wifi, WifiOff, Hash, Key, Loader2, RefreshCw } from "lucide-react";
+import { LogOut, Wifi, WifiOff, Hash, Mail, Lock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { saveCredentials, loadCredentials, loadRefreshToken, clearCredentials } from "@/lib/autodarts";
+import { saveCredentials, clearCredentials, loginAutodarts } from "@/lib/autodarts";
 
 export default function SettingsPage() {
-  const [refreshToken, setRefreshToken] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [boardId, setBoardId] = useState("");
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const storedRefresh = loadRefreshToken();
     const storedBoardId = localStorage.getItem("autodarts_board_id");
-    if (storedRefresh) { setRefreshToken(storedRefresh); setSaved(true); }
+    const hasRefresh = !!localStorage.getItem("autodarts_refresh_token");
     if (storedBoardId) setBoardId(storedBoardId);
+    if (hasRefresh) setSaved(true);
   }, []);
 
-  const handleSave = () => {
-    if (!refreshToken.trim() || !boardId.trim()) return;
-    // Sauvegarde le refresh token + board ID (l'access token sera obtenu automatiquement)
-    saveCredentials("", boardId.trim(), 0, refreshToken.trim());
-    localStorage.setItem("autodarts_board_id", boardId.trim());
-    setSaved(true);
+  const handleLogin = async () => {
+    if (!email.trim() || !password.trim() || !boardId.trim()) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await loginAutodarts(email.trim(), password.trim());
+      saveCredentials(data.access_token, boardId.trim(), data.expires_in, data.refresh_token);
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Connexion échouée");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = () => {
     clearCredentials();
-    setRefreshToken("");
-    setBoardId("");
+    setEmail("");
+    setPassword("");
     setSaved(false);
+    setError("");
   };
 
-  const canSave = refreshToken.trim().length > 10 && boardId.trim().length > 10;
+  const canLogin = email.trim().length > 3 && password.trim().length > 0 && boardId.trim().length > 10;
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
@@ -54,88 +65,105 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <CardTitle>Connexion Autodarts</CardTitle>
-                  <CardDescription>Token OAuth + Board ID</CardDescription>
+                  <CardDescription>Tes identifiants autodarts.io</CardDescription>
                 </div>
               </div>
               <Badge variant={saved ? "success" : "secondary"}>
-                {saved ? "Configuré" : "Non configuré"}
+                {saved ? "Connecté" : "Non configuré"}
               </Badge>
             </div>
           </CardHeader>
 
           <CardContent className="flex flex-col gap-5">
-            {/* Instructions */}
-            <div className="p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 text-sm flex flex-col gap-2">
-              <p className="font-semibold text-white/80">Comment obtenir ton refresh token :</p>
-              <ol className="text-white/60 flex flex-col gap-1 list-decimal list-inside">
-                <li>Va sur <strong className="text-white">play.autodarts.io</strong> et connecte-toi avec Google</li>
-                <li>Appuie sur <strong className="text-white">F12</strong> → onglet <strong className="text-white">Réseau</strong></li>
-                <li>Recharge la page (<strong className="text-white">F5</strong>)</li>
-                <li>Dans la liste, cherche une requête vers <strong className="text-white">login.autodarts.io</strong> avec <code className="bg-white/10 px-1 rounded">/token</code></li>
-                <li>Clique dessus → onglet <strong className="text-white">Réponse</strong></li>
-                <li>Copie la valeur de <code className="bg-white/10 px-1 rounded">refresh_token</code> (très long texte)</li>
-              </ol>
-              <p className="text-amber-400/70 text-xs mt-1">⚠️ Ne copie pas l&apos;access_token (expire en 5 min) — prends bien le refresh_token (valable 30 jours)</p>
-            </div>
 
-            {/* Refresh token input */}
-            <div>
-              <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
-                <Key className="w-3.5 h-3.5" />
-                Refresh Token
-              </label>
-              <textarea
-                value={refreshToken}
-                onChange={(e) => { setRefreshToken(e.target.value); setSaved(false); }}
-                placeholder="eyJhbGciOiJIUzUxMiIsInR5cCIgOiAiSldUIi..."
-                rows={3}
-                className="w-full rounded-xl border border-white/20 bg-white/5 px-4 py-3 text-xs text-white font-mono placeholder:text-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 resize-none"
-              />
-              <p className="text-xs text-white/30 mt-1">
-                Valable ~30 jours. L&apos;access token sera renouvelé automatiquement à chaque session.
-              </p>
-            </div>
+            {!saved ? (
+              <>
+                {/* Avertissement 2FA */}
+                <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 text-sm">
+                  <p className="font-semibold text-amber-300 mb-1">⚠️ Prérequis</p>
+                  <p className="text-white/60">
+                    Cette connexion utilise ton <strong className="text-white">email + mot de passe</strong> Autodarts.
+                    Si tu te connectes uniquement via Google, tu dois d&apos;abord{" "}
+                    <strong className="text-white">définir un mot de passe</strong> dans ton profil Autodarts
+                    et <strong className="text-white">désactiver la 2FA</strong>.
+                  </p>
+                </div>
 
-            {/* Board ID */}
-            <div>
-              <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
-                <Hash className="w-3.5 h-3.5" />
-                Board ID
-              </label>
-              <Input
-                value={boardId}
-                onChange={(e) => { setBoardId(e.target.value); setSaved(false); }}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                className="font-mono text-xs"
-              />
-              <p className="text-xs text-white/30 mt-1">
-                Disponible dans autodarts.io → Paramètres → ton board
-              </p>
-            </div>
+                {/* Email */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
+                    <Mail className="w-3.5 h-3.5" />
+                    Email
+                  </label>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="ton@email.com"
+                  />
+                </div>
 
-            {/* Actions */}
-            <div className="flex gap-3">
-              <Button onClick={handleSave} disabled={!canSave} className="flex-1">
-                <Wifi className="w-4 h-4" />
-                {saved ? "Mis à jour" : "Enregistrer"}
-              </Button>
-              {saved && (
+                {/* Password */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
+                    <Lock className="w-3.5 h-3.5" />
+                    Mot de passe
+                  </label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    onKeyDown={(e) => e.key === "Enter" && canLogin && handleLogin()}
+                  />
+                </div>
+
+                {/* Board ID */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-sm font-medium text-white/70 mb-2">
+                    <Hash className="w-3.5 h-3.5" />
+                    Board ID
+                  </label>
+                  <Input
+                    value={boardId}
+                    onChange={(e) => setBoardId(e.target.value)}
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-white/30 mt-1">
+                    Disponible dans autodarts.io → Paramètres → ton board
+                  </p>
+                </div>
+
+                {error && (
+                  <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+                    {error}
+                  </p>
+                )}
+
+                <Button onClick={handleLogin} disabled={!canLogin || loading} className="w-full">
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wifi className="w-4 h-4" />}
+                  {loading ? "Connexion…" : "Se connecter"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                  <p className="text-sm text-emerald-400 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Authentifié — l&apos;accès est renouvelé automatiquement à chaque session.
+                  </p>
+                </div>
+
                 <Button
                   variant="ghost"
                   onClick={handleLogout}
-                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 w-full"
                 >
                   <LogOut className="w-4 h-4" />
-                  Supprimer
+                  Se déconnecter
                 </Button>
-              )}
-            </div>
-
-            {saved && (
-              <p className="text-xs text-emerald-400/80 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Refresh token enregistré — l&apos;accès sera renouvelé automatiquement.
-              </p>
+              </>
             )}
           </CardContent>
         </Card>
@@ -154,7 +182,8 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-white/50">
-              Les boutons <strong className="text-white">Touché / Raté</strong> sont toujours visibles pendant les sessions, même si Autodarts est connecté — utile comme fallback.
+              Les boutons <strong className="text-white">Touché / Raté</strong> sont toujours visibles
+              pendant les sessions, même si Autodarts est connecté — utile comme fallback.
             </p>
           </CardContent>
         </Card>

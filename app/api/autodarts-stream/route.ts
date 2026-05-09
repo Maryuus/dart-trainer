@@ -23,47 +23,62 @@ export async function GET(req: NextRequest) {
         try { controller.enqueue(encoder.encode(line)); } catch { /* stream closed */ }
       };
 
-      // Retry rapide pour minimiser le gap lors des reconnexions automatiques
       send("retry: 1000\n\n");
 
-      const ws = new WebSocket(`${WS_URL}?token=${token}`);
+      // ✅ Fix 1 : token dans le header Authorization, pas dans l'URL
+      const ws = new WebSocket(WS_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      // Keepalive toutes les 20s pour éviter le timeout Vercel sur streaming
       const keepalive = setInterval(() => send(": keepalive\n\n"), 20_000);
 
       ws.on("open", () => {
+        console.log("[autodarts-stream] WS connected ✓");
+
+        // ✅ Fix 2 : bon format d'abonnement (topic, pas data.boardId)
         ws.send(JSON.stringify({
-          channel: "autodarts.boards",
           type: "subscribe",
-          data: { boardId },
+          channel: "autodarts.boards",
+          topic: `${boardId}.events`,
         }));
         send("event: connected\ndata: {}\n\n");
       });
 
-      ws.on("message", (data) => {
+      ws.on("message", (raw) => {
         try {
-          const msg = JSON.parse(data.toString());
+          const msg = JSON.parse(raw.toString());
+          console.log("[autodarts-stream] msg:", JSON.stringify(msg).slice(0, 200));
+
+          // Ignorer le message d'info initial
+          if (msg?.topic === "info") return;
+
+          // Format board events : { topic: "<boardId>.events", data: { event: "Throw detected", segment: {...} } }
+          if (msg?.data?.event === "Throw detected") {
+            send(`event: throw\ndata: ${JSON.stringify(msg.data)}\n\n`);
+            return;
+          }
+
+          // Fallback : ancien format avec tableau throws
           if (msg?.data?.throws) {
             send(`event: throw\ndata: ${JSON.stringify(msg.data)}\n\n`);
           }
-        } catch { /* ignore malformed messages */ }
+        } catch { /* ignore */ }
       });
 
       ws.on("close", (code, reason) => {
         clearInterval(keepalive);
-        console.warn(`[autodarts-stream] WS closed — code: ${code}, reason: ${reason}`);
+        console.warn(`[autodarts-stream] closed — code: ${code}, reason: ${reason.toString()}`);
         send("event: disconnected\ndata: {}\n\n");
         try { controller.close(); } catch { /* already closed */ }
       });
 
       ws.on("error", (err) => {
         clearInterval(keepalive);
-        console.error("[autodarts-stream] WS error:", err.message);
+        console.error("[autodarts-stream] error:", err.message);
         send("event: error\ndata: {}\n\n");
         try { controller.close(); } catch { /* already closed */ }
       });
 
-      // Nettoyage quand le client se déconnecte
       req.signal.addEventListener("abort", () => {
         clearInterval(keepalive);
         ws.close();
